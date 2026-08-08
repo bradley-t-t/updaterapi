@@ -13,9 +13,17 @@ import java.nio.channels.Channels;
 import java.nio.channels.ReadableByteChannel;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
-import java.util.logging.Logger;
 import org.bukkit.plugin.java.JavaPlugin;
 
+/**
+ * {@link UpdaterService} backed by the Spiget API.
+ *
+ * <p>Version checks hit {@code api.spiget.org} for the resource's latest
+ * version name; downloads land in the plugin's {@code AutoUpdater} data
+ * subfolder until {@link #handleUpdateOnShutdown} installs them. Versions
+ * compare numerically segment by segment after stripping non-numeric
+ * characters, so {@code v1.10} is newer than {@code 1.9}.
+ */
 public class UpdaterImpl implements UpdaterService {
    private final JavaPlugin plugin;
    private final int resourceId;
@@ -32,7 +40,7 @@ public class UpdaterImpl implements UpdaterService {
    public void checkForUpdates(boolean autoUpdate) {
       try {
          URL url = new URL("https://api.spiget.org/v2/resources/" + this.resourceId + "/versions/latest");
-         HttpURLConnection connection = (HttpURLConnection)url.openConnection();
+         HttpURLConnection connection = (HttpURLConnection) url.openConnection();
          connection.setRequestMethod("GET");
          connection.setRequestProperty("User-Agent", this.plugin.getName() + "-Updater");
          connection.setConnectTimeout(5000);
@@ -43,15 +51,14 @@ public class UpdaterImpl implements UpdaterService {
             return;
          }
 
-         BufferedReader reader = new BufferedReader(new InputStreamReader(connection.getInputStream()));
          StringBuilder response = new StringBuilder();
-
-         String line;
-         while((line = reader.readLine()) != null) {
-            response.append(line);
+         try (BufferedReader reader = new BufferedReader(new InputStreamReader(connection.getInputStream()))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+               response.append(line);
+            }
          }
 
-         reader.close();
          connection.disconnect();
          JsonObject json = JsonParser.parseString(response.toString()).getAsJsonObject();
          if (!json.has("name")) {
@@ -73,7 +80,6 @@ public class UpdaterImpl implements UpdaterService {
       } catch (Exception e) {
          this.plugin.getLogger().warning("Failed to check for updates: " + e.getMessage());
       }
-
    }
 
    private boolean isVersionNewer(String latest, String current) {
@@ -84,7 +90,7 @@ public class UpdaterImpl implements UpdaterService {
          String[] currentParts = normalizedCurrent.split("\\.");
          int maxLength = Math.max(latestParts.length, currentParts.length);
 
-         for(int i = 0; i < maxLength; ++i) {
+         for (int i = 0; i < maxLength; ++i) {
             int latestNum = i < latestParts.length ? Integer.parseInt(latestParts[i]) : 0;
             int currentNum = i < currentParts.length ? Integer.parseInt(currentParts[i]) : 0;
             if (latestNum > currentNum) {
@@ -97,7 +103,7 @@ public class UpdaterImpl implements UpdaterService {
          }
 
          return false;
-      } catch (NumberFormatException var11) {
+      } catch (NumberFormatException e) {
          this.plugin.getLogger().warning("Invalid version format: latest=" + latest + ", current=" + current);
          return false;
       }
@@ -110,15 +116,14 @@ public class UpdaterImpl implements UpdaterService {
             updateFolder.mkdirs();
          }
 
-         String var10004 = this.plugin.getName();
-         this.downloadedUpdate = new File(updateFolder, var10004 + "-" + this.latestVersion + ".jar");
+         this.downloadedUpdate = new File(updateFolder, this.plugin.getName() + "-" + this.latestVersion + ".jar");
          if (this.downloadedUpdate.exists()) {
             this.plugin.getLogger().info("Update file " + this.downloadedUpdate.getPath() + " already exists.");
             return;
          }
 
          URL url = new URL("https://api.spiget.org/v2/resources/" + this.resourceId + "/download");
-         HttpURLConnection connection = (HttpURLConnection)url.openConnection();
+         HttpURLConnection connection = (HttpURLConnection) url.openConnection();
          connection.setRequestProperty("User-Agent", this.plugin.getName() + "-Updater");
          connection.setConnectTimeout(5000);
          connection.setReadTimeout(5000);
@@ -128,57 +133,11 @@ public class UpdaterImpl implements UpdaterService {
             return;
          }
 
-         InputStream inputStream = connection.getInputStream();
-
-         try {
-            ReadableByteChannel readableByteChannel = Channels.newChannel(inputStream);
-
-            try {
-               FileOutputStream fileOutputStream = new FileOutputStream(this.downloadedUpdate);
-
-               try {
-                  fileOutputStream.getChannel().transferFrom(readableByteChannel, 0L, Long.MAX_VALUE);
-                  this.plugin.getLogger().info("Downloaded update to " + this.downloadedUpdate.getPath() + ".");
-               } catch (Throwable var13) {
-                  try {
-                     fileOutputStream.close();
-                  } catch (Throwable var12) {
-                     var13.addSuppressed(var12);
-                  }
-
-                  throw var13;
-               }
-
-               fileOutputStream.close();
-            } catch (Throwable var14) {
-               if (readableByteChannel != null) {
-                  try {
-                     readableByteChannel.close();
-                  } catch (Throwable var11) {
-                     var14.addSuppressed(var11);
-                  }
-               }
-
-               throw var14;
-            }
-
-            if (readableByteChannel != null) {
-               readableByteChannel.close();
-            }
-         } catch (Throwable var15) {
-            if (inputStream != null) {
-               try {
-                  inputStream.close();
-               } catch (Throwable var10) {
-                  var15.addSuppressed(var10);
-               }
-            }
-
-            throw var15;
-         }
-
-         if (inputStream != null) {
-            inputStream.close();
+         try (InputStream inputStream = connection.getInputStream();
+              ReadableByteChannel channel = Channels.newChannel(inputStream);
+              FileOutputStream out = new FileOutputStream(this.downloadedUpdate)) {
+            out.getChannel().transferFrom(channel, 0L, Long.MAX_VALUE);
+            this.plugin.getLogger().info("Downloaded update to " + this.downloadedUpdate.getPath() + ".");
          }
 
          connection.disconnect();
@@ -186,7 +145,6 @@ public class UpdaterImpl implements UpdaterService {
          this.plugin.getLogger().warning("Failed to download update: " + e.getMessage());
          this.downloadedUpdate = null;
       }
-
    }
 
    public void handleUpdateOnShutdown() {
@@ -196,14 +154,12 @@ public class UpdaterImpl implements UpdaterService {
             File currentJar = new File(this.getClass().getProtectionDomain().getCodeSource().getLocation().toURI());
             File[] existingJars = pluginsFolder.listFiles((dir, name) -> name.startsWith(this.plugin.getName()) && name.endsWith(".jar"));
             if (existingJars != null) {
-               for(File jar : existingJars) {
+               for (File jar : existingJars) {
                   try {
                      Files.deleteIfExists(jar.toPath());
                      this.plugin.getLogger().info("Deleted old JAR: " + jar.getPath());
                   } catch (Exception e) {
-                     Logger var13 = this.plugin.getLogger();
-                     String var15 = jar.getPath();
-                     var13.warning("Failed to delete old JAR " + var15 + ": " + e.getMessage());
+                     this.plugin.getLogger().warning("Failed to delete old JAR " + jar.getPath() + ": " + e.getMessage());
                   }
                }
             }
@@ -213,23 +169,17 @@ public class UpdaterImpl implements UpdaterService {
                   Files.deleteIfExists(currentJar.toPath());
                   this.plugin.getLogger().info("Deleted current JAR: " + currentJar.getPath());
                } catch (Exception e) {
-                  Logger var14 = this.plugin.getLogger();
-                  String var16 = currentJar.getPath();
-                  var14.warning("Failed to delete current JAR " + var16 + ": " + e.getMessage());
+                  this.plugin.getLogger().warning("Failed to delete current JAR " + currentJar.getPath() + ": " + e.getMessage());
                }
             }
 
-            String var10003 = this.plugin.getName();
-            File targetFile = new File(pluginsFolder, var10003 + "-" + this.latestVersion + ".jar");
+            File targetFile = new File(pluginsFolder, this.plugin.getName() + "-" + this.latestVersion + ".jar");
             Files.move(this.downloadedUpdate.toPath(), targetFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
             this.plugin.getLogger().info("Moved update to " + targetFile.getPath() + ". Restart server to apply.");
          } catch (Exception e) {
             this.plugin.getLogger().warning("Failed to apply update: " + e.getMessage());
-            Logger var10000 = this.plugin.getLogger();
-            String var10001 = this.plugin.getName();
-            var10000.info("To apply update manually: 1) Stop server. 2) Remove old " + var10001 + " JARs. 3) Move " + this.downloadedUpdate.getPath() + " to plugins/" + this.plugin.getName() + "-" + this.latestVersion + ".jar. 4) Restart server.");
+            this.plugin.getLogger().info("To apply update manually: 1) Stop server. 2) Remove old " + this.plugin.getName() + " JARs. 3) Move " + this.downloadedUpdate.getPath() + " to plugins/" + this.plugin.getName() + "-" + this.latestVersion + ".jar. 4) Restart server.");
          }
-
       }
    }
 
