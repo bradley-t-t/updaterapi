@@ -35,8 +35,8 @@ it.
 
 ## Requirements
 
-- Spigot/Paper API 1.21+
-- Java 17+
+- Paper or Spigot, Minecraft 1.21 through 26.2
+- Java 17 or newer
 
 ## Installing to your local Maven repository
 
