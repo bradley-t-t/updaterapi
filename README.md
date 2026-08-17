@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.0.0-0a0a0b?style=for-the-badge" alt="Version 1.0.0" />
+  <img src="https://img.shields.io/badge/version-1.0.1-0a0a0b?style=for-the-badge" alt="Version 1.0.1" />
   <img src="https://img.shields.io/badge/Java-17-0a0a0b?style=for-the-badge&logo=openjdk&logoColor=white" alt="Java 17" />
   <img src="https://img.shields.io/badge/Spigot-1.21.4_API-0a0a0b?style=for-the-badge" alt="Spigot 1.21.4 API" />
   <img src="https://img.shields.io/badge/Maven-shaded-0a0a0b?style=for-the-badge&logo=apachemaven&logoColor=white" alt="Maven, shaded" />
