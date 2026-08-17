@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.0.0-0a0a0b?style=for-the-badge" alt="Version 1.0.0" />
+  <img src="https://img.shields.io/badge/version-1.0.1-0a0a0b?style=for-the-badge" alt="Version 1.0.1" />
   <img src="https://img.shields.io/badge/Java-17-0a0a0b?style=for-the-badge&logo=openjdk&logoColor=white" alt="Java 17" />
   <img src="https://img.shields.io/badge/Spigot-1.21.4_API-0a0a0b?style=for-the-badge" alt="Spigot 1.21.4 API" />
   <img src="https://img.shields.io/badge/Maven-shaded-0a0a0b?style=for-the-badge&logo=apachemaven&logoColor=white" alt="Maven, shaded" />
@@ -98,6 +98,28 @@ mvn install
 
 `checkForUpdates` performs blocking network calls on the thread that invokes it — call it off the main thread, or accept the startup pause.
 
+## Architecture
+
+```mermaid
+flowchart TD
+    E["Plugin onEnable"] --> Chk["checkForUpdates(autoUpdate)"]
+    Chk --> Spiget["api.spiget.org — latest version for the resource id"]
+    Spiget --> Cmp{"Newer than the running version?"}
+    Cmp -->|"no"| Idle["Nothing to do"]
+    Cmp -->|"yes"| Flag["updateAvailable = true"]
+    Flag -->|"autoUpdate"| DL["Download the jar to a staging file"]
+    Flag -->|"notify only"| Tell["Owner is told a version exists"]
+    D["Server shutting down"] --> Swap["handleUpdateOnShutdown — move the staged jar into plugins/"]
+    DL --> Swap
+```
+
+## How it works
+
+- **The swap waits for shutdown because it has to.** A loaded jar cannot be overwritten while the server holds it open, so the download happens during normal running and the file move happens in `handleUpdateOnShutdown` — the one moment the file is free and a jar change cannot break anything still running.
+- **Versions are compared numerically, not lexically.** Both version names are stripped of non-numeric characters and compared segment by segment, which is what makes `v1.10` correctly newer than `1.9` instead of sorting before it.
+- **Two Spiget endpoints, one resource id.** The version check reads `/resources/{id}/versions/latest` and the download pulls `/resources/{id}/download`, so a plugin only ever configures the one number.
+- **Auto-update is opt-in per call.** `checkForUpdates(false)` sets `isUpdateAvailable()` and `getLatestVersion()` and stops there, leaving the notification to the calling plugin.
+
 ## Project structure
 
 ```
@@ -113,6 +135,10 @@ mvn package
 ```
 
 The shaded jar lands in `target/`.
+
+## License
+
+Copyright (c) 2026 Trenton Taylor. All rights reserved.
 
 <br />
 
